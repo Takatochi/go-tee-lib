@@ -5,8 +5,6 @@ import (
 	"sync"
 	"time"
 
-	// Import your library by its GitHub path.
-	// Replace 'your_username' with your actual GitHub username.
 	"github.com/Takatochi/go-tee-lib/tee"
 )
 
