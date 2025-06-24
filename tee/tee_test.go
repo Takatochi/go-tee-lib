@@ -1,0 +1,284 @@
+// Package tee provides tests for the generic Tee implementation for Go channels.
+package tee
+
+import (
+	"fmt"
+	"sync"
+	"testing"
+	"time"
+)
+
+// TestNewTeeUnbuffered ensures that NewTee creates the correct number of unbuffered channels.
+func TestNewTeeUnbuffered(t *testing.T) {
+	numChans := 5
+	teeInstance := NewTee[int](numChans, 0) // 0 for unbuffered
+
+	outputChans := teeInstance.GetOutputChannels()
+
+	if len(outputChans) != numChans {
+		t.Errorf("Expected %d output channels, got %d", numChans, len(outputChans))
+	}
+
+	for i, ch := range outputChans {
+		select {
+		case ch <- 1:
+			t.Errorf("Channel %d should be unbuffered, but it accepted a value immediately", i)
+		default:
+			// Expected behavior for an unbuffered channel when nothing is reading
+		}
+	}
+}
+
+// TestNewTeeBuffered ensures that NewTee creates the correct number of buffered channels with the specified size.
+func TestNewTeeBuffered(t *testing.T) {
+	numChans := 3
+	bufferSize := 10
+	teeInstance := NewTee[string](numChans, bufferSize)
+
+	outputChans := teeInstance.GetOutputChannels()
+
+	if len(outputChans) != numChans {
+		t.Errorf("Expected %d output channels, got %d", numChans, len(outputChans))
+	}
+
+	for i, ch := range outputChans {
+		for j := 0; j < bufferSize; j++ {
+			select {
+			case ch <- fmt.Sprintf("test%d", j):
+				// Expected: Should be able to write up to bufferSize without blocking
+			default:
+				t.Errorf("Channel %d should be buffered with size %d, but it blocked at %d writes", i, bufferSize, j)
+			}
+		}
+		// Attempt to write one more than buffer size, it should block
+		select {
+		case ch <- "extra":
+			t.Errorf("Channel %d should have blocked after %d writes, but it accepted an extra value", i, bufferSize)
+		default:
+			// Expected behavior: channel is full
+		}
+	}
+}
+
+// TestTeeRunDuplicatesData verifies that Tee.Run duplicates all data to all output channels.
+func TestTeeRunDuplicatesData(t *testing.T) {
+	numChans := 3
+	dataCount := 10
+	teeInstance := NewTee[int](numChans, 0) // Using unbuffered for strict verification
+	inputCh := make(chan int)
+	outputChans := teeInstance.GetOutputChannels()
+
+	var wg sync.WaitGroup
+	receivedCounts := make([]int, numChans)
+	receivedData := make([][]int, numChans)
+
+	for i := 0; i < numChans; i++ {
+		receivedData[i] = make([]int, 0, dataCount)
+		wg.Add(1)
+		go func(consumerID int, ch <-chan int) {
+			defer wg.Done()
+			for val := range ch {
+				receivedData[consumerID] = append(receivedData[consumerID], val)
+				receivedCounts[consumerID]++
+			}
+		}(i, outputChans[i])
+	}
+
+	go teeInstance.Run(inputCh)
+
+	for i := 0; i < dataCount; i++ {
+		inputCh <- i
+	}
+	close(inputCh) // Signal Tee to close output channels
+
+	wg.Wait() // Wait for all consumers to finish
+
+	// Verify all consumers received all data
+	for i := 0; i < numChans; i++ {
+		if receivedCounts[i] != dataCount {
+			t.Errorf("Consumer %d: Expected to receive %d items, got %d", i, dataCount, receivedCounts[i])
+		}
+		for j := 0; j < dataCount; j++ {
+			if receivedData[i][j] != j {
+				t.Errorf("Consumer %d: Expected item at index %d to be %d, got %d", i, j, j, receivedData[i][j])
+			}
+		}
+	}
+}
+
+// TestTeeRunClosesChannels ensures that output channels are closed after the input channel.
+func TestTeeRunClosesChannels(t *testing.T) {
+	numChans := 2
+	teeInstance := NewTee[bool](numChans, 0)
+	inputCh := make(chan bool)
+	outputChans := teeInstance.GetOutputChannels()
+
+	var wg sync.WaitGroup
+	closeSignals := make(chan struct{}, numChans) // To signal when a consumer's channel is closed
+
+	for i := 0; i < numChans; i++ {
+		wg.Add(1)
+		go func(ch <-chan bool) {
+			defer wg.Done()
+			for range ch {
+				// Read any data sent
+			}
+			closeSignals <- struct{}{} // Signal that channel is closed
+		}(outputChans[i])
+	}
+
+	go teeInstance.Run(inputCh)
+
+	inputCh <- true // Send some data
+	close(inputCh)  // Close input channel
+
+	// Wait for all output channels to be reported as closed
+	for i := 0; i < numChans; i++ {
+		select {
+		case <-closeSignals:
+			// Expected: channel was closed
+		case <-time.After(time.Second):
+			t.Fatalf("Timeout waiting for output channel %d to close", i)
+		}
+	}
+	wg.Wait() // Ensure all goroutines have exited
+}
+
+// CustomTee is a custom implementation of the ChannelTee interface for testing purposes.
+type CustomTee struct {
+	outputChs []chan int
+}
+
+// GetOutputChannels returns the output channels for CustomTee.
+func (ct *CustomTee) GetOutputChannels() []chan int {
+	return ct.outputChs
+}
+
+// Run duplicates values from the input channel to all output channels for CustomTee.
+func (ct *CustomTee) Run(inputChannel <-chan int) {
+	go func() {
+		defer func() {
+			for _, ch := range ct.outputChs {
+				close(ch)
+			}
+		}()
+		for val := range inputChannel {
+			for _, ch := range ct.outputChs {
+				ch <- val
+			}
+		}
+	}()
+}
+
+// TestRunTeeAndProcessFullCycle verifies the end-to-end functionality of RunTeeAndProcess.
+func TestRunTeeAndProcessFullCycle(t *testing.T) {
+	dataToSend := []int{1, 2, 3, 4, 5}
+	numConsumers := 2
+	bufferedSize := 1 // Test with buffered channels
+	receivedData := make([][]int, numConsumers)
+	var mu sync.Mutex // Mutex to protect receivedData slices
+
+	// Consumer processing function that records received data
+	consumerProcessor := func(id int, ch <-chan int) {
+		localReceived := []int{}
+		for val := range ch {
+			localReceived = append(localReceived, val)
+		}
+		mu.Lock()
+		receivedData[id-1] = localReceived // id is 1-based, array is 0-based
+		mu.Unlock()
+	}
+
+	// Create a Tee instance to pass to RunTeeAndProcess
+	myTee := NewTee[int](numConsumers, bufferedSize)
+
+	// Run the full process
+	RunTeeAndProcess(myTee, dataToSend, consumerProcessor)
+
+	// Verify that each consumer received all data
+	for i := 0; i < numConsumers; i++ {
+		if len(receivedData[i]) != len(dataToSend) {
+			t.Errorf("Consumer %d: Expected %d items, got %d", i+1, len(dataToSend), len(receivedData[i]))
+			continue
+		}
+		for j, val := range dataToSend {
+			if receivedData[i][j] != val {
+				t.Errorf("Consumer %d: Expected item %d to be %d, got %d", i+1, j, val, receivedData[i][j])
+			}
+		}
+	}
+}
+
+// TestRunTeeAndProcessNoBuffer verifies RunTeeAndProcess with unbuffered channels.
+func TestRunTeeAndProcessNoBuffer(t *testing.T) {
+	dataToSend := []string{"apple", "banana", "cherry"}
+	numConsumers := 2
+	bufferedSize := 0 // Unbuffered channels
+	receivedData := make([][]string, numConsumers)
+	var mu sync.Mutex
+
+	consumerProcessor := func(id int, ch <-chan string) {
+		localReceived := []string{}
+		for val := range ch {
+			localReceived = append(localReceived, val)
+		}
+		mu.Lock()
+		receivedData[id-1] = localReceived
+		mu.Unlock()
+	}
+
+	myTee := NewTee[string](numConsumers, bufferedSize)
+	RunTeeAndProcess(myTee, dataToSend, consumerProcessor)
+
+	for i := 0; i < numConsumers; i++ {
+		if len(receivedData[i]) != len(dataToSend) {
+			t.Errorf("Consumer %d: Expected %d items, got %d (unbuffered test)", i+1, len(dataToSend), len(receivedData[i]))
+			continue
+		}
+		for j, val := range dataToSend {
+			if receivedData[i][j] != val {
+				t.Errorf("Consumer %d: Expected item %d to be '%s', got '%s' (unbuffered test)", i+1, j, val, receivedData[i][j])
+			}
+		}
+	}
+}
+
+// TestCustomChannelTeeImplementation ensures RunTeeAndProcess works with custom ChannelTee implementations.
+func TestCustomChannelTeeImplementation(t *testing.T) {
+	// Create a custom Tee implementation
+	numChans := 2
+	customOutputChans := make([]chan int, numChans)
+	for i := 0; i < numChans; i++ {
+		customOutputChans[i] = make(chan int, 1) // Buffered channels for custom tee
+	}
+	customTeeInstance := &CustomTee{outputChs: customOutputChans}
+
+	dataToSend := []int{100, 200, 300}
+	receivedData := make([][]int, numChans)
+	var mu sync.Mutex
+
+	consumerProcessor := func(id int, ch <-chan int) {
+		localReceived := []int{}
+		for val := range ch {
+			localReceived = append(localReceived, val)
+		}
+		mu.Lock()
+		receivedData[id-1] = localReceived
+		mu.Unlock()
+	}
+
+	// Use RunTeeAndProcess with the custom Tee
+	RunTeeAndProcess(customTeeInstance, dataToSend, consumerProcessor)
+
+	for i := 0; i < numChans; i++ {
+		if len(receivedData[i]) != len(dataToSend) {
+			t.Errorf("Custom Tee Consumer %d: Expected %d items, got %d", i+1, len(dataToSend), len(receivedData[i]))
+			continue
+		}
+		for j, val := range dataToSend {
+			if receivedData[i][j] != val {
+				t.Errorf("Custom Tee Consumer %d: Expected item %d to be %d, got %d", i+1, j, val, receivedData[i][j])
+			}
+		}
+	}
+}
