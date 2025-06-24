@@ -155,4 +155,4 @@ For scenarios requiring more granular control over the input channel's lifecycle
 We welcome contributions! If you find a bug or have a feature request, please open an issue. For code contributions, please fork the repository and submit a pull request.
 
 ## License
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the MIT License - see the [LICENSE](./LICENSE)  file for details.
