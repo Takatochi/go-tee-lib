@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"time"
@@ -31,10 +32,12 @@ func main() {
 
 	// Create a Tee instance using the unified NewTee function
 	myTee := tee.NewTee[int](numConsumers, bufferedSize)
+	// Create context with timeout
+	ctx := context.Background()
 	// Run the teeing process and wait for consumers to finish
-	tee.RunTeeAndProcess(myTee, dataToSend, consumerProcessor)
+	tee.RunTeeAndProcess(ctx, myTee, dataToSend, consumerProcessor)
 
-	fmt.Println("\n--- RunTeeAndProcess example finished ---\n")
+	fmt.Println("\n--- RunTeeAndProcess example finished ---")
 
 	// Example 2: Manual usage of Tee.Run for more control with NewTee
 	fmt.Println("--- Manual Tee.Run example with NewTee ---")
@@ -43,7 +46,8 @@ func main() {
 	outputChansManual := manualTee.GetOutputChannels()
 
 	// Start the Tee's Run method in a goroutine
-	go manualTee.Run(inputCh)
+	manualCtx := context.Background()
+	go manualTee.Run(manualCtx, inputCh)
 
 	var wg sync.WaitGroup
 

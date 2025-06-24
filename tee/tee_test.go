@@ -1,13 +1,16 @@
+// Package tee надає тести для загальної реалізації Tee для Go каналів.
 // Package tee provides tests for the generic Tee implementation for Go channels.
 package tee
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"testing"
 	"time"
 )
 
+// TestNewTeeUnbuffered перевіряє, що NewTee створює правильну кількість небуферизованих каналів.
 // TestNewTeeUnbuffered ensures that NewTee creates the correct number of unbuffered channels.
 func TestNewTeeUnbuffered(t *testing.T) {
 	numChans := 5
@@ -29,6 +32,7 @@ func TestNewTeeUnbuffered(t *testing.T) {
 	}
 }
 
+// TestNewTeeBuffered перевіряє, що NewTee створює правильну кількість буферизованих каналів із заданим розміром.
 // TestNewTeeBuffered ensures that NewTee creates the correct number of buffered channels with the specified size.
 func TestNewTeeBuffered(t *testing.T) {
 	numChans := 3
@@ -60,6 +64,7 @@ func TestNewTeeBuffered(t *testing.T) {
 	}
 }
 
+// TestTeeRunDuplicatesData перевіряє, що Tee.Run дублює всі дані до всіх вихідних каналів.
 // TestTeeRunDuplicatesData verifies that Tee.Run duplicates all data to all output channels.
 func TestTeeRunDuplicatesData(t *testing.T) {
 	numChans := 3
@@ -83,8 +88,9 @@ func TestTeeRunDuplicatesData(t *testing.T) {
 			}
 		}(i, outputChans[i])
 	}
-
-	go teeInstance.Run(inputCh)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*2) // Timeout after 2 seconds
+	defer cancel()
+	go teeInstance.Run(ctx, inputCh)
 
 	for i := 0; i < dataCount; i++ {
 		inputCh <- i
@@ -127,7 +133,9 @@ func TestTeeRunClosesChannels(t *testing.T) {
 		}(outputChans[i])
 	}
 
-	go teeInstance.Run(inputCh)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*2) // Timeout after 2 seconds
+	defer cancel()
+	go teeInstance.Run(ctx, inputCh)
 
 	inputCh <- true // Send some data
 	close(inputCh)  // Close input channel
@@ -155,16 +163,28 @@ func (ct *CustomTee) GetOutputChannels() []chan int {
 }
 
 // Run duplicates values from the input channel to all output channels for CustomTee.
-func (ct *CustomTee) Run(inputChannel <-chan int) {
+func (ct *CustomTee) Run(ctx context.Context, inputChannel <-chan int) {
 	go func() {
 		defer func() {
 			for _, ch := range ct.outputChs {
 				close(ch)
 			}
 		}()
-		for val := range inputChannel {
-			for _, ch := range ct.outputChs {
-				ch <- val
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case val, ok := <-inputChannel:
+				if !ok {
+					return
+				}
+				for _, ch := range ct.outputChs {
+					select {
+					case <-ctx.Done():
+						return
+					case ch <- val:
+					}
+				}
 			}
 		}
 	}()
@@ -180,7 +200,7 @@ func TestRunTeeAndProcessFullCycle(t *testing.T) {
 
 	// Consumer processing function that records received data
 	consumerProcessor := func(id int, ch <-chan int) {
-		localReceived := []int{}
+		var localReceived []int
 		for val := range ch {
 			localReceived = append(localReceived, val)
 		}
@@ -191,9 +211,10 @@ func TestRunTeeAndProcessFullCycle(t *testing.T) {
 
 	// Create a Tee instance to pass to RunTeeAndProcess
 	myTee := NewTee[int](numConsumers, bufferedSize)
-
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*2) // Timeout after 2 seconds
+	defer cancel()
 	// Run the full process
-	RunTeeAndProcess(myTee, dataToSend, consumerProcessor)
+	RunTeeAndProcess(ctx, myTee, dataToSend, consumerProcessor)
 
 	// Verify that each consumer received all data
 	for i := 0; i < numConsumers; i++ {
@@ -218,7 +239,7 @@ func TestRunTeeAndProcessNoBuffer(t *testing.T) {
 	var mu sync.Mutex
 
 	consumerProcessor := func(id int, ch <-chan string) {
-		localReceived := []string{}
+		var localReceived []string
 		for val := range ch {
 			localReceived = append(localReceived, val)
 		}
@@ -228,7 +249,10 @@ func TestRunTeeAndProcessNoBuffer(t *testing.T) {
 	}
 
 	myTee := NewTee[string](numConsumers, bufferedSize)
-	RunTeeAndProcess(myTee, dataToSend, consumerProcessor)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*2) // Timeout after 2 seconds
+	defer cancel()
+	// Run the full process
+	RunTeeAndProcess(ctx, myTee, dataToSend, consumerProcessor)
 
 	for i := 0; i < numConsumers; i++ {
 		if len(receivedData[i]) != len(dataToSend) {
@@ -258,7 +282,7 @@ func TestCustomChannelTeeImplementation(t *testing.T) {
 	var mu sync.Mutex
 
 	consumerProcessor := func(id int, ch <-chan int) {
-		localReceived := []int{}
+		var localReceived []int
 		for val := range ch {
 			localReceived = append(localReceived, val)
 		}
@@ -266,9 +290,11 @@ func TestCustomChannelTeeImplementation(t *testing.T) {
 		receivedData[id-1] = localReceived
 		mu.Unlock()
 	}
-
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*2) // Timeout after 2 seconds
+	defer cancel()
+	// Run the full process
 	// Use RunTeeAndProcess with the custom Tee
-	RunTeeAndProcess(customTeeInstance, dataToSend, consumerProcessor)
+	RunTeeAndProcess(ctx, customTeeInstance, dataToSend, consumerProcessor)
 
 	for i := 0; i < numChans; i++ {
 		if len(receivedData[i]) != len(dataToSend) {

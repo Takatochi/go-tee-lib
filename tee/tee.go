@@ -1,100 +1,71 @@
+// Package tee надає загальну реалізацію патерну Tee для Go каналів.
+// Дозволяє дублювати значення з одного вхідного каналу до кількох вихідних каналів.
+//
 // Package tee provides a generic Tee implementation for Go channels.
 // It allows duplicating values from a single input channel to multiple output channels.
+//
+// Патерн Tee корисний для:
+// - Паралельної обробки одних і тих же даних різними споживачами
+// - Розподілу потоку даних на кілька незалежних обробників
+// - Створення копій даних для логування, моніторингу та основної обробки
+//
+// The Tee pattern is useful for:
+// - Parallel processing of the same data by different consumers
+// - Distributing data stream to multiple independent processors
+// - Creating data copies for logging, monitoring, and main processing
 package tee
 
 import (
+	"context"
 	"sync"
 )
 
-// ChannelTee # Typical usage
+// ChannelTee - інтерфейс для реалізації патерну Tee з каналами.
+// ChannelTee interface for implementing the Tee pattern with channels.
 //
-// ```go
-// package main
+// Приклад використання / Usage example:
 //
-// import (
+//	// Створення Tee з 3 споживачами та буферизованими каналами
+//	// Creating Tee with 3 consumers and buffered channels
+//	teeInstance := tee.NewTee[int](3, 2)
 //
-//	"fmt"
-//	"time"
-//	"github.com/Takatochi/go-tee-lib/tee"
-//
-// )
-//
-//	func main() {
-//		// --- Example 1: Using RunTeeAndProcess for convenience with NewTee ---
-//		fmt.Println("--- Example using RunTeeAndProcess with NewTee ---")
-//		dataToSend := []int{10, 20, 30}
-//		numConsumers := 2
-//		bufferedSize := 1 // Use 0 for unbuffered, > 0 for buffered
-//
-//		// Define the consumer processing function
-//		consumerProcessor := func(id int, ch <-chan int) {
-//			fmt.Printf("Consumer #%d: Starting processing...\n", id)
-//			for val := range ch {
-//				fmt.Printf("Consumer #%d: Received value %d\n", id, val)
-//				time.Sleep(time.Millisecond * 50) // Simulate work
-//			}
-//			fmt.Printf("Consumer #%d: Channel closed. Exiting.\n", id)
+//	// Функція обробки для кожного споживача
+//	// Processing function for each consumer
+//	processor := func(id int, ch <-chan int) {
+//		fmt.Printf("Споживач #%d: Початок обробки\n", id)
+//		for value := range ch {
+//			fmt.Printf("Споживач #%d отримав: %d\n", id, value)
 //		}
-//
-//		// Create a Tee instance using the unified NewTee function
-//		myTee := tee.NewTee[int](numConsumers, bufferedSize)
-//		// Run the teeing process and wait for consumers to finish
-//		tee.RunTeeAndProcess(myTee, dataToSend, consumerProcessor)
-//
-//		fmt.Println("\n--- RunTeeAndProcess example finished ---\n")
-//
-//		// --- Example 2: Manual usage of Tee.Run for more control with NewTee ---
-//		fmt.Println("--- Manual Tee.Run example with NewTee ---")
-//		inputCh := make(chan string)
-//		manualTee := tee.NewTee[string](2, 0) // 2 unbuffered output channels (bufferSize = 0)
-//		outputChansManual := manualTee.GetOutputChannels()
-//
-//		// Start the Tee's Run method in a goroutine
-//		go manualTee.Run(inputCh)
-//
-//		var wg sync.WaitGroup
-//
-//		// Start consumers manually
-//		for i, outCh := range outputChansManual {
-//			wg.Add(1)
-//			go func(id int, ch <-chan string) {
-//				defer wg.Done()
-//				fmt.Printf("Manual Consumer #%d: Starting...\n", id)
-//				for val := range ch {
-//					fmt.Printf("Manual Consumer #%d: Received '%s'\n", id, val)
-//					time.Sleep(time.Millisecond * 70)
-//				}
-//				fmt.Printf("Manual Consumer #%d: Channel closed. Exiting.\n", id)
-//			}(i+1, outCh)
-//		}
-//
-//		// Send data to the input channel
-//		messages := []string{"Hello", "World", "Go"}
-//		for _, msg := range messages {
-//			fmt.Printf("Main (Manual): Sending '%s'\n", msg)
-//			inputCh <- msg
-//			time.Sleep(time.Millisecond * 40)
-//		}
-//
-//		fmt.Println("Main (Manual): Closing input channel")
-//		close(inputCh) // Crucial: close the input channel
-//
-//		wg.Wait() // Wait for all manual consumers to finish
-//		fmt.Println("--- Manual Tee.Run example finished ---")
 //	}
 //
-// ```
+//	// Запуск обробки з даними
+//	// Start processing with data
+//	data := []int{10, 20, 30, 40, 50}
+//	ctx := context.Background()
+//	tee.RunTeeAndProcess(ctx, teeInstance, data, processor)
 type ChannelTee[T any] interface {
+	// GetOutputChannels повертає слайс вихідних каналів з Tee.
 	// GetOutputChannels returns the slice of output channels from the Tee.
 	GetOutputChannels() []chan T
+
+	// Run запускає процес розподілу даних. Читає з inputChannel
+	// та дублює повідомлення до всіх вихідних каналів.
+	// Ця функція зазвичай повинна запускатися в горутині.
+	// Блокується до закриття inputChannel та обробки всіх значень.
+	// Після закриття inputChannel всі вихідні канали також будуть закриті.
+	//
 	// Run starts the teeing process. It reads from the inputChannel
 	// and duplicates the messages to all output channels.
 	// This function should typically be run in a goroutine.
 	// It will block until the inputChannel is closed and all values are processed.
 	// Once the inputChannel is closed, all output channels will also be closed.
-	Run(inputChannel <-chan T)
+	Run(ctx context.Context, inputChannel <-chan T)
 }
 
+// Tee [T any] структура, що містить вихідні канали.
+// WaitGroup для координації горутин споживачів керується викликаючим кодом,
+// а не самим Tee, відповідно до ідіоматичних патернів каналів Go.
+//
 // Tee [T any] struct holds the output channels.
 // The WaitGroup for coordinating consumer goroutines is managed by the caller,
 // not by the Tee itself, as per Go's idiomatic channel patterns.
@@ -102,6 +73,11 @@ type Tee[T any] struct {
 	outputChannels []chan T
 }
 
+// NewTee створює новий екземпляр Tee з вказаною кількістю вихідних каналів.
+// Якщо bufferSize дорівнює 0, створюються небуферизовані канали.
+// Інакше створюються буферизовані канали з заданим bufferSize.
+// Повертає інтерфейс ChannelTee, конкретно *Tee[T], який реалізує інтерфейс.
+//
 // NewTee creates a new Tee instance with the specified number of output channels.
 // If bufferSize is 0, unbuffered channels are created. Otherwise, buffered channels
 // with the given bufferSize are created.
@@ -120,24 +96,40 @@ func NewTee[T any](numOutputChans int, bufferSize int) ChannelTee[T] {
 	}
 }
 
+// GetOutputChannels повертає слайс вихідних каналів з Tee.
 // GetOutputChannels returns the slice of output channels from the Tee.
 func (t *Tee[T]) GetOutputChannels() []chan T {
 	return t.outputChannels
 }
 
+// Run запускає процес розподілу даних. Читає з inputChannel
+// та дублює повідомлення до всіх вихідних каналів.
+// Ця функція зазвичай повинна запускатися в горутині.
+// Блокується до закриття inputChannel та обробки всіх значень.
+// Після закриття inputChannel всі вихідні канали також будуть закриті.
+//
 // Run starts the teeing process. It reads from the inputChannel
 // and duplicates the messages to all output channels.
 // This function should typically be run in a goroutine.
 // It will block until the inputChannel is closed and all values are processed.
 // Once the inputChannel is closed, all output channels will also be closed.
 //
+// Це правильна реалізація патерну Tee:
+// Одна горутина читає з вхідного каналу та розподіляє
+// кожне отримане значення до всіх своїх вихідних каналів.
+//
 // This is the correct implementation of the Tee pattern:
 // A single goroutine reads from the input channel and then distributes
 // each received value to all its output channels.
-func (t *Tee[T]) Run(inputChannel <-chan T) {
+func (t *Tee[T]) Run(ctx context.Context, inputChannel <-chan T) {
+	// Основна горутина, що читає з вхідного каналу та розподіляє дані
 	// The main goroutine that reads from the input channel and distributes data
 	go func() {
 		defer func() {
+			// Після закриття вхідного каналу та читання всіх значень,
+			// ми повинні закрити всі вихідні канали. Це гарантує, що горутини споживачів,
+			// які читають з цих каналів, вийдуть зі своїх циклів `for range`.
+			//
 			// After the input channel is closed and all values have been read,
 			// we must close all output channels. This ensures that consumer
 			// goroutines reading from these channels will exit their `for range` loops.
@@ -146,58 +138,76 @@ func (t *Tee[T]) Run(inputChannel <-chan T) {
 			}
 		}()
 
-		for val := range inputChannel {
-			// For each value from the input channel, send it to every output channel.
-			for _, outCh := range t.outputChannels {
-				// This operation might block if an outCh is full or not being read from.
-				// For production applications, a select statement with a timeout or context
-				// could be added for better control and to prevent deadlocks in complex scenarios.
-				outCh <- val
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case val, ok := <-inputChannel:
+				if !ok {
+					return
+				}
+				// Для кожного значення з вхідного каналу відправляємо його до кожного вихідного каналу.
+				// For each value from the input channel, send it to every output channel.
+				for _, outCh := range t.outputChannels {
+					select {
+					case <-ctx.Done():
+						return
+					case outCh <- val:
+						// Успішно відправлено / Successfully sent
+					}
+				}
 			}
 		}
 	}()
 }
 
+// RunTeeAndProcess [T any] - зручна функція, що організовує весь процес розподілу даних.
+// Приймає екземпляр ChannelTee, слайс елементів для відправки та функцію обробки для споживачів.
+// Відправляє елементи через наданий екземпляр tee та запускає горутини споживачів
+// для кожного вихідного каналу, використовуючи надану функцію обробки.
+// Блокується до обробки всіх елементів усіма споживачами.
+//
 // RunTeeAndProcess [T any] is a convenience function that orchestrates the entire teeing process.
 // It takes a ChannelTee instance, a slice of items to send, and a process function for consumers.
 // It sends the items through the provided tee instance and then spawns consumer goroutines
 // for each output channel using the provided process function.
 // It blocks until all items are processed by all consumers.
 //
-// Parameters:
-//   - teeInstance: An instance of ChannelTee (e.g., created by NewTeeBufferSize or NewTeeUnbufferSize),
-//     or a custom implementation of ChannelTee.
-//   - items: The slice of data to be sent through the tee.
-//   - processFn: A function that will be executed for each output channel.
-//     It receives the consumer's ID and the output channel (`<-chan T`) as arguments.
-func RunTeeAndProcess[T any](teeInstance ChannelTee[T], items []T, processFn func(id int, ch <-chan T)) {
-	// Create an input channel for the data
+// Параметри / Parameters:
+//   - ctx: Контекст для скасування операції / Context for cancellation
+//   - teeInstance: Екземпляр ChannelTee (наприклад, створений NewTee),
+//     або власна реалізація ChannelTee / An instance of ChannelTee or custom implementation
+//   - items: Слайс даних для відправки через tee / The slice of data to be sent through the tee
+//   - processFn: Функція, що виконується для кожного вихідного каналу.
+//     Отримує ID споживача та вихідний канал як аргументи /
+//     Function executed for each output channel, receives consumer ID and output channel
+func RunTeeAndProcess[T any](ctx context.Context, teeInstance ChannelTee[T], items []T, processFn func(id int, ch <-chan T)) {
+	// Створюємо вхідний канал для даних / Create an input channel for the data
 	inputCh := make(chan T)
 
 	outputChans := teeInstance.GetOutputChannels()
 
-	var wg sync.WaitGroup // WaitGroup for waiting for consumer goroutines to complete
+	var wg sync.WaitGroup // WaitGroup для очікування завершення горутин споживачів / WaitGroup for waiting for consumer goroutines to complete
 
-	// Start the Tee in a separate goroutine to distribute the data
-	go teeInstance.Run(inputCh)
+	// Запускаємо Tee в окремій горутині для розподілу даних / Start the Tee in a separate goroutine to distribute the data
+	go teeInstance.Run(ctx, inputCh)
 
-	// Start goroutines to read from the output channels (consumers)
+	// Запускаємо горутини для читання з вихідних каналів (споживачі) / Start goroutines to read from the output channels (consumers)
 	for i, outCh := range outputChans {
-		wg.Add(1) // Add a counter for each consumer goroutine
+		wg.Add(1) // Додаємо лічильник для кожної горутини споживача / Add a counter for each consumer goroutine
 		go func(id int, ch <-chan T) {
-			defer wg.Done()   // Decrement the WaitGroup counter when the goroutine finishes
-			processFn(id, ch) // Call the provided processing function for this channel
-		}(i+1, outCh) // Pass the consumer ID (starting from 1) and the channel
+			defer wg.Done()   // Зменшуємо лічильник WaitGroup при завершенні горутини / Decrement the WaitGroup counter when the goroutine finishes
+			processFn(id, ch) // Викликаємо надану функцію обробки для цього каналу / Call the provided processing function for this channel
+		}(i+1, outCh) // Передаємо ID споживача (починаючи з 1) та канал / Pass the consumer ID (starting from 1) and the channel
 	}
 
-	// Send all items to the input channel in a separate goroutine
+	// Відправляємо всі елементи до вхідного каналу в окремій горутині / Send all items to the input channel in a separate goroutine
 	go func() {
 		for _, item := range items {
 			inputCh <- item
 		}
-		close(inputCh) // Important: close the input channel after sending all data
+		close(inputCh) // Важливо: закриваємо вхідний канал після відправки всіх даних / Important: close the input channel after sending all data
 	}()
 
-	wg.Wait() // Wait until all consumer goroutines have completed their work
-	// fmt.Println("All consumer goroutines have finished.") // This log is now in the example main.go
+	wg.Wait() // Очікуємо завершення всіх горутин споживачів / Wait until all consumer goroutines have completed their work
 }
