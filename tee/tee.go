@@ -15,7 +15,7 @@ import (
 //
 //	"fmt"
 //	"time"
-//	""github.com/Takatochi/go-tee-lib/tee"" // Assuming your package is named 'myteelib' and tee.go is inside a 'tee' folder
+//	"github.com/Takatochi/go-tee-lib/tee"
 //
 // )
 //
