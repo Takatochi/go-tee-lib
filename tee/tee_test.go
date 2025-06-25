@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -188,6 +189,7 @@ func (ct *CustomTee) Run(ctx context.Context, inputChannel <-chan int) {
 
 // TestRunTeeAndProcessFullCycle verifies the end-to-end functionality of RunTeeAndProcess.
 func TestRunTeeAndProcessFullCycle(t *testing.T) {
+	ctx := context.Background()
 	dataToSend := []int{1, 2, 3, 4, 5}
 	numConsumers := 2
 	bufferedSize := 1 // Test with buffered channels
@@ -195,20 +197,30 @@ func TestRunTeeAndProcessFullCycle(t *testing.T) {
 	var mu sync.Mutex // Mutex to protect receivedData slices
 
 	// Consumer processing function that records received data
-	consumerProcessor := func(id int, ch <-chan int) {
+	consumerProcessor := func(ctx context.Context, id int, ch <-chan int) {
 		var localReceived []int
-		for val := range ch {
-			localReceived = append(localReceived, val)
+		for {
+			select {
+			case <-ctx.Done():
+				mu.Lock()
+				receivedData[id-1] = localReceived // id is 1-based, array is 0-based
+				mu.Unlock()
+				return
+			case val, ok := <-ch:
+				if !ok {
+					mu.Lock()
+					receivedData[id-1] = localReceived // id is 1-based, array is 0-based
+					mu.Unlock()
+					return
+				}
+				localReceived = append(localReceived, val)
+			}
 		}
-		mu.Lock()
-		receivedData[id-1] = localReceived // id is 1-based, array is 0-based
-		mu.Unlock()
 	}
 
 	// Create a Tee instance to pass to RunTeeAndProcess
 	myTee := NewTee[int](numConsumers, bufferedSize)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*2) // Timeout after 2 seconds
-	defer cancel()
+
 	// Run the full process
 	RunTeeAndProcess(ctx, myTee, dataToSend, consumerProcessor)
 
@@ -228,25 +240,36 @@ func TestRunTeeAndProcessFullCycle(t *testing.T) {
 
 // TestRunTeeAndProcessNoBuffer verifies RunTeeAndProcess with unbuffered channels.
 func TestRunTeeAndProcessNoBuffer(t *testing.T) {
+	ctx := context.Background()
 	dataToSend := []string{"apple", "banana", "cherry"}
 	numConsumers := 2
 	bufferedSize := 0 // Unbuffered channels
 	receivedData := make([][]string, numConsumers)
 	var mu sync.Mutex
 
-	consumerProcessor := func(id int, ch <-chan string) {
+	consumerProcessor := func(ctx context.Context, id int, ch <-chan string) {
 		var localReceived []string
-		for val := range ch {
-			localReceived = append(localReceived, val)
+		for {
+			select {
+			case <-ctx.Done():
+				mu.Lock()
+				receivedData[id-1] = localReceived
+				mu.Unlock()
+				return
+			case val, ok := <-ch:
+				if !ok {
+					mu.Lock()
+					receivedData[id-1] = localReceived
+					mu.Unlock()
+					return
+				}
+				localReceived = append(localReceived, val)
+			}
 		}
-		mu.Lock()
-		receivedData[id-1] = localReceived
-		mu.Unlock()
 	}
 
 	myTee := NewTee[string](numConsumers, bufferedSize)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*2) // Timeout after 2 seconds
-	defer cancel()
+
 	// Run the full process
 	RunTeeAndProcess(ctx, myTee, dataToSend, consumerProcessor)
 
@@ -277,15 +300,26 @@ func TestCustomChannelTeeImplementation(t *testing.T) {
 	receivedData := make([][]int, numChans)
 	var mu sync.Mutex
 
-	consumerProcessor := func(id int, ch <-chan int) {
+	consumerProcessor := func(ctx context.Context, id int, ch <-chan int) {
 		var localReceived []int
-		for val := range ch {
-			localReceived = append(localReceived, val)
+		for {
+			select {
+			case val, ok := <-ch:
+				if !ok {
+					mu.Lock()
+					receivedData[id-1] = localReceived
+					mu.Unlock()
+					return
+				}
+				localReceived = append(localReceived, val)
+			case <-ctx.Done():
+				mu.Lock()
+				receivedData[id-1] = localReceived
+				mu.Unlock()
+			}
 		}
-		mu.Lock()
-		receivedData[id-1] = localReceived
-		mu.Unlock()
 	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*2) // Timeout after 2 seconds
 	defer cancel()
 	// Run the full process
@@ -303,4 +337,131 @@ func TestCustomChannelTeeImplementation(t *testing.T) {
 			}
 		}
 	}
+}
+
+// TestRunTeeWithGenerator verifies the generator-based teeing functionality.
+func TestRunTeeWithGenerator(t *testing.T) {
+	ctx := context.Background()
+	numConsumers := 2
+	bufferedSize := 1
+	receivedData := make([][]int, numConsumers)
+	var mu sync.Mutex
+
+	// Generator function that produces data
+	generator := func(ctx context.Context, ch chan<- int) {
+		defer close(ch) // Important: close the channel when done
+		for i := 1; i <= 5; i++ {
+			select {
+			case <-ctx.Done():
+				return // Exit early if context is cancelled
+			case ch <- i:
+				// Successfully sent item
+			}
+		}
+	}
+
+	// Consumer processing function
+	consumerProcessor := func(ctx context.Context, id int, ch <-chan int) {
+		var localReceived []int
+		for {
+			select {
+			case <-ctx.Done():
+				mu.Lock()
+				receivedData[id-1] = localReceived
+				mu.Unlock()
+				return
+			case val, ok := <-ch:
+				if !ok {
+					mu.Lock()
+					receivedData[id-1] = localReceived
+					mu.Unlock()
+					return
+				}
+				localReceived = append(localReceived, val)
+			}
+		}
+	}
+
+	myTee := NewTee[int](numConsumers, bufferedSize)
+
+	// Run the generator-based process
+	RunTeeWithGenerator(ctx, myTee, generator, consumerProcessor)
+
+	// Verify that all consumers received all data
+	expectedData := []int{1, 2, 3, 4, 5}
+	for i := 0; i < numConsumers; i++ {
+		if len(receivedData[i]) != len(expectedData) {
+			t.Errorf("Consumer %d: Expected %d items, got %d", i+1, len(expectedData), len(receivedData[i]))
+			continue
+		}
+		for j, val := range expectedData {
+			if receivedData[i][j] != val {
+				t.Errorf("Consumer %d: Expected item %d to be %d, got %d", i+1, j, val, receivedData[i][j])
+			}
+		}
+	}
+}
+
+// TestRunTeeWithGeneratorCancellation verifies proper context cancellation handling.
+func TestRunTeeWithGeneratorCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	numConsumers := 2
+	bufferedSize := 0
+
+	// Generator that would run indefinitely without cancellation
+	generator := func(ctx context.Context, ch chan<- int) {
+		defer close(ch)
+		for i := 1; ; i++ {
+			select {
+			case <-ctx.Done():
+				return // Exit when context is cancelled
+			case ch <- i:
+				// Successfully sent item
+			}
+		}
+	}
+
+	// Consumer that counts received items
+	itemCount := int32(0)
+	consumerProcessor := func(ctx context.Context, id int, ch <-chan int) {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case _, ok := <-ch:
+				if !ok {
+					return
+				}
+				atomic.AddInt32(&itemCount, 1)
+			}
+		}
+	}
+
+	myTee := NewTee[int](numConsumers, bufferedSize)
+
+	// Start the process in a goroutine
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		RunTeeWithGenerator(ctx, myTee, generator, consumerProcessor)
+	}()
+
+	// Let it run for a short time, then cancel
+	time.Sleep(10 * time.Millisecond)
+	cancel()
+
+	// Wait for completion with timeout
+	select {
+	case <-done:
+		// Good, it completed
+	case <-time.After(1 * time.Second):
+		t.Error("RunTeeWithGenerator did not complete within timeout after cancellation")
+	}
+
+	// Verify that some items were processed (but not too many due to cancellation)
+	count := atomic.LoadInt32(&itemCount)
+	if count == 0 {
+		t.Error("Expected some items to be processed before cancellation")
+	}
+	t.Logf("Processed %d items before cancellation", count)
 }

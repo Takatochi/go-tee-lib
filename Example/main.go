@@ -10,6 +10,9 @@ import (
 )
 
 func main() {
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*2)
+	defer cancel()
 	fmt.Println("Demonstration of the Tee library usage")
 	fmt.Println("=======================================")
 
@@ -20,20 +23,29 @@ func main() {
 	bufferedSize := 2 // Use 0 for unbuffered, > 0 for buffered channels
 
 	// Function that will be executed by each consumer
-	consumerProcessor := func(id int, ch <-chan int) {
+	consumerProcessor := func(ctx context.Context, id int, ch <-chan int) {
 		fmt.Printf("Consumer #%d: Starting processing...\n", id)
-		for val := range ch {
-			fmt.Printf("Consumer #%d: Received value %d\n", id, val)
-			// Simulate processing delay
-			time.Sleep(time.Millisecond * time.Duration(50+id*20))
+		for {
+			select {
+			case <-ctx.Done():
+				fmt.Printf("Consumer #%d: Context cancelled. Exiting.\n", id)
+				return
+			case val, ok := <-ch:
+				if !ok {
+					fmt.Printf("Consumer #%d: Channel closed. Exiting.\n", id)
+					return
+				}
+				fmt.Printf("Consumer #%d: Received value %d\n", id, val)
+				// Simulate processing delay
+				time.Sleep(time.Millisecond * time.Duration(50+id*20))
+			}
+
 		}
-		fmt.Printf("Consumer #%d: Channel closed. Exiting.\n", id)
 	}
 
 	// Create a Tee instance using the unified NewTee function
 	myTee := tee.NewTee[int](numConsumers, bufferedSize)
-	// Create context with timeout
-	ctx := context.Background()
+
 	// Run the teeing process and wait for consumers to finish
 	tee.RunTeeAndProcess(ctx, myTee, dataToSend, consumerProcessor)
 
