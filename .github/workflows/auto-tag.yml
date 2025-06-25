@@ -31,17 +31,16 @@ jobs:
       run: |
         # Analyze commit messages to determine version bump type
         COMMIT_MSG="${{ github.event.head_commit.message }}"
-        
-        if echo "$COMMIT_MSG" | grep -qE "^(feat|feature)(\(.+\))?!:|^BREAKING CHANGE:|breaking change"; then
-          BUMP_TYPE="major"
-        elif echo "$COMMIT_MSG" | grep -qE "^(feat|feature)(\(.+\))?:"; then
-          BUMP_TYPE="minor"
-        elif echo "$COMMIT_MSG" | grep -qE "^(fix|bugfix|patch)(\(.+\))?:"; then
-          BUMP_TYPE="patch"
+
+        # For this project, we prefer minor/patch versions over major
+        if echo "$COMMIT_MSG" | grep -qE "^(feat|feature)(\(.+\))?:"; then
+          BUMP_TYPE="minor"  # New features get minor version bump
+        elif echo "$COMMIT_MSG" | grep -qE "^(fix|bugfix|patch|docs|style|refactor|test|chore)(\(.+\))?:"; then
+          BUMP_TYPE="patch"  # Fixes, docs, and other changes get patch bump
         else
           BUMP_TYPE="patch"  # Default to patch for other changes
         fi
-        
+
         echo "bump_type=$BUMP_TYPE" >> $GITHUB_OUTPUT
         echo "Detected bump type: $BUMP_TYPE"
 

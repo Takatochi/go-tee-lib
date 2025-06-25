@@ -70,8 +70,13 @@ is sent to Goroutine Consumer A, Goroutine Consumer B, AND Goroutine Consumer C.
 This ensures that all consumers receive the complete dataset, allowing for parallel and independent processing.
 ## Installation
 To use go-tee-lib in your project, simply run go get:
+```bash
+go get github.com/Takatochi/go-tee-lib@latest
 ```
-go get github.com/Takatochi/go-tee-lib/tee
+
+Or specify a specific version:
+```bash
+go get github.com/Takatochi/go-tee-lib@v1.2.0
 ```
 ## Usage
 Basic Usage with NewTee and RunTeeAndProcess
@@ -259,11 +264,27 @@ type ChannelTee[T any] interface {
 }
 ```
 
-## Breaking Changes in v2.0.0
+## What's New in v1.2.0
 
-- `processFn` in `RunTeeAndProcess` now requires `context.Context` as the first parameter
-- All functions now require `context.Context` for proper cancellation support
-- Examples and documentation updated to reflect the new context-aware API
+- **Context Support**: Added `context.Context` integration for cancellation and timeouts
+- **Generator Pattern**: New `RunTeeWithGenerator` function for streaming data scenarios
+- **Enhanced Safety**: Improved goroutine lifecycle management and resource cleanup
+- **Backward Compatibility**: Existing v1.1.x code continues to work with minor updates
+
+### Migration from v1.1.x
+
+For existing code, simply add context parameter:
+
+```go
+// Old v1.1.x
+processor := func(id int, ch <-chan int) { /* ... */ }
+tee.RunTeeAndProcess(teeInstance, data, processor)
+
+// New v1.2.x
+processor := func(ctx context.Context, id int, ch <-chan int) { /* ... */ }
+ctx := context.Background()
+tee.RunTeeAndProcess(ctx, teeInstance, data, processor)
+```
 
 ## Contributing
 We welcome contributions! If you find a bug or have a feature request, please open an issue. For code contributions, please fork the repository and submit a pull request.
