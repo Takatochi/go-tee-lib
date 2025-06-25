@@ -1,4 +1,12 @@
 ## go-tee-lib: Generic Tee Implementation for Go Channels
+
+[![CI](https://github.com/Takatochi/go-tee-lib/workflows/CI/badge.svg)](https://github.com/Takatochi/go-tee-lib/actions/workflows/ci.yml)
+[![Code Quality](https://github.com/Takatochi/go-tee-lib/workflows/Code%20Quality/badge.svg)](https://github.com/Takatochi/go-tee-lib/actions/workflows/quality.yml)
+[![Cross Platform](https://github.com/Takatochi/go-tee-lib/workflows/Cross%20Platform/badge.svg)](https://github.com/Takatochi/go-tee-lib/actions/workflows/cross-platform.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/Takatochi/go-tee-lib)](https://goreportcard.com/report/github.com/Takatochi/go-tee-lib)
+[![GoDoc](https://godoc.org/github.com/Takatochi/go-tee-lib/tee?status.svg)](https://godoc.org/github.com/Takatochi/go-tee-lib/tee)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 go-tee-lib is a Go module that provides a generic "Tee" pattern implementation for channels. It allows you to duplicate values from a single input channel to multiple output channels, enabling parallel processing or fan-out scenarios with ease.
 
 ## Why Use a Tee?

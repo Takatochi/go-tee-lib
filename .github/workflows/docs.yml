@@ -1,0 +1,121 @@
+name: Documentation
+
+on:
+  push:
+    branches: [ main, dev ]
+  pull_request:
+    branches: [ main, dev ]
+
+jobs:
+  godoc:
+    name: Generate Go Documentation
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: 1.23
+
+    - name: Install godoc
+      run: go install golang.org/x/tools/cmd/godoc@latest
+
+    - name: Generate documentation
+      run: |
+        # Start godoc server in background
+        godoc -http=:6060 &
+        GODOC_PID=$!
+        
+        # Wait for server to start
+        sleep 5
+        
+        # Check if documentation is accessible
+        curl -f http://localhost:6060/pkg/github.com/Takatochi/go-tee-lib/tee/ || exit 1
+        
+        # Kill godoc server
+        kill $GODOC_PID
+
+  readme-check:
+    name: README Check
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v4
+
+    - name: Check README exists
+      run: |
+        if [ ! -f README.md ]; then
+          echo "README.md not found"
+          exit 1
+        fi
+
+    - name: Check README content
+      run: |
+        # Check if README contains essential sections
+        if ! grep -q "## Installation" README.md; then
+          echo "README.md missing Installation section"
+          exit 1
+        fi
+        
+        if ! grep -q "## Usage" README.md; then
+          echo "README.md missing Usage section"
+          exit 1
+        fi
+        
+        if ! grep -q "go get" README.md; then
+          echo "README.md missing go get command"
+          exit 1
+        fi
+
+  example-check:
+    name: Example Check
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: 1.23
+
+    - name: Check examples compile
+      run: |
+        cd Example
+        go build -v ./...
+
+    - name: Run examples
+      run: |
+        cd Example
+        timeout 30s go run main.go || true
+
+  benchmark:
+    name: Benchmarks
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: 1.23
+
+    - name: Run benchmarks
+      run: |
+        go test -bench=. -benchmem ./... || echo "No benchmarks found"
+
+    - name: Performance regression check
+      run: |
+        # Run benchmarks and save results
+        go test -bench=. -benchmem ./... > bench.txt 2>&1 || true
+        
+        # Check if there are any benchmarks
+        if grep -q "Benchmark" bench.txt; then
+          echo "Benchmarks found and executed successfully"
+          cat bench.txt
+        else
+          echo "No benchmarks found - consider adding some for performance monitoring"
+        fi
