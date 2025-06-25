@@ -353,7 +353,7 @@ func TestRunTeeWithGenerator(t *testing.T) {
 		for i := 1; i <= 5; i++ {
 			select {
 			case <-ctx.Done():
-				return // Exit early if context is cancelled
+				return // Exit early if context is canceled
 			case ch <- i:
 				// Successfully sent item
 			}
@@ -414,7 +414,7 @@ func TestRunTeeWithGeneratorCancellation(t *testing.T) {
 		for i := 1; ; i++ {
 			select {
 			case <-ctx.Done():
-				return // Exit when context is cancelled
+				return // Exit when context is canceled
 			case ch <- i:
 				// Successfully sent item
 			}
@@ -423,7 +423,7 @@ func TestRunTeeWithGeneratorCancellation(t *testing.T) {
 
 	// Consumer that counts received items
 	itemCount := int32(0)
-	consumerProcessor := func(ctx context.Context, id int, ch <-chan int) {
+	consumerProcessor := func(ctx context.Context, _ int, ch <-chan int) {
 		for {
 			select {
 			case <-ctx.Done():

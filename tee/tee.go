@@ -153,7 +153,7 @@ func RunTeeAndProcess[T any](ctx context.Context, teeInstance ChannelTee[T], ite
 		for _, item := range items {
 			select {
 			case <-ctx.Done():
-				return // Exit early if context is cancelled
+				return // Exit early if context is canceled
 			case inputCh <- item:
 				// Successfully sent item
 			}
