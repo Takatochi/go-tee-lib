@@ -1,0 +1,144 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: 1.23
+
+    - name: Run tests
+      run: go test -v ./...
+
+    - name: Get tag name
+      id: tag
+      run: echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+    - name: Generate changelog
+      id: changelog
+      run: |
+        # Get the previous tag
+        PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+        
+        # Generate changelog
+        if [ -n "$PREV_TAG" ]; then
+          echo "## Changes since $PREV_TAG" > CHANGELOG.md
+          git log --pretty=format:"- %s (%h)" $PREV_TAG..HEAD >> CHANGELOG.md
+        else
+          echo "## Initial Release" > CHANGELOG.md
+          echo "- First release of go-tee-lib" >> CHANGELOG.md
+        fi
+        
+        # Set output
+        echo "changelog<<EOF" >> $GITHUB_OUTPUT
+        cat CHANGELOG.md >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+
+    - name: Create Release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ steps.tag.outputs.tag }}
+        release_name: Release ${{ steps.tag.outputs.tag }}
+        body: |
+          # go-tee-lib ${{ steps.tag.outputs.tag }}
+          
+          A generic Tee implementation for Go channels with context support.
+          
+          ## Installation
+          ```bash
+          go get github.com/Takatochi/go-tee-lib@${{ steps.tag.outputs.tag }}
+          ```
+          
+          ## Usage
+          ```go
+          import "github.com/Takatochi/go-tee-lib/tee"
+          
+          // Create Tee with 3 consumers
+          teeInstance := tee.NewTee[int](3, 2)
+          ctx := context.Background()
+          
+          // Process data
+          data := []int{1, 2, 3, 4, 5}
+          tee.RunTeeAndProcess(ctx, teeInstance, data, processor)
+          ```
+          
+          ${{ steps.changelog.outputs.changelog }}
+        draft: false
+        prerelease: false
+
+  validate-module:
+    name: Validate Go Module
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: 1.23
+
+    - name: Validate module
+      run: |
+        go mod verify
+        go mod tidy
+        git diff --exit-code go.mod go.sum
+
+    - name: Test installation
+      run: |
+        # Create a temporary directory for testing
+        mkdir -p /tmp/test-install
+        cd /tmp/test-install
+        
+        # Initialize a new module
+        go mod init test-install
+        
+        # Try to install the current version
+        TAG=${GITHUB_REF#refs/tags/}
+        go get github.com/Takatochi/go-tee-lib@$TAG
+        
+        # Create a simple test
+        cat > main.go << 'EOF'
+        package main
+        
+        import (
+            "context"
+            "fmt"
+            "github.com/Takatochi/go-tee-lib/tee"
+        )
+        
+        func main() {
+            data := []string{"test"}
+            teeInstance := tee.NewTee[string](1, 0)
+            ctx := context.Background()
+            
+            processor := func(id int, ch <-chan string) {
+                for range ch {
+                    fmt.Println("OK")
+                }
+            }
+            
+            tee.RunTeeAndProcess(ctx, teeInstance, data, processor)
+        }
+        EOF
+        
+        # Run the test
+        go run main.go

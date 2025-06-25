@@ -1,0 +1,134 @@
+name: Cross Platform
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+
+jobs:
+  test-matrix:
+    name: Test Matrix
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        go-version: [1.21, 1.22, 1.23]
+
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ matrix.go-version }}
+
+    - name: Cache Go modules
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ matrix.go-version }}-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-${{ matrix.go-version }}-
+
+    - name: Download dependencies
+      run: go mod download
+
+    - name: Run tests
+      run: go test -v -race ./...
+
+    - name: Build examples
+      run: |
+        cd Example
+        go build -v ./...
+
+    - name: Test examples (Unix)
+      if: runner.os != 'Windows'
+      run: |
+        cd Example
+        timeout 30s go run main.go || true
+
+    - name: Test examples (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        cd Example
+        go run main.go
+      timeout-minutes: 1
+
+  build-matrix:
+    name: Build Matrix
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goos: [linux, windows, darwin, freebsd]
+        goarch: [amd64, arm64]
+        exclude:
+          # Exclude combinations that don't make sense
+          - goos: windows
+            goarch: arm64
+          - goos: freebsd
+            goarch: arm64
+
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: 1.23
+
+    - name: Build for ${{ matrix.goos }}/${{ matrix.goarch }}
+      env:
+        GOOS: ${{ matrix.goos }}
+        GOARCH: ${{ matrix.goarch }}
+      run: |
+        echo "Building for $GOOS/$GOARCH"
+        go build -v ./...
+        
+        # Build examples
+        cd Example
+        go build -v ./...
+
+  race-detector:
+    name: Race Detector
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: 1.23
+
+    - name: Run tests with race detector
+      run: go test -race -count=10 ./...
+
+  stress-test:
+    name: Stress Test
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: 1.23
+
+    - name: Install stress tool
+      run: go install golang.org/x/tools/cmd/stress@latest
+
+    - name: Run stress tests
+      run: |
+        # Run each test multiple times to catch race conditions
+        for test in $(go test -list . ./tee | grep "^Test"); do
+          echo "Stress testing $test"
+          stress -p=4 go test -run="^${test}$" ./tee || exit 1
+        done
+      timeout-minutes: 5
