@@ -2,9 +2,9 @@ name: Cross Platform
 
 on:
   push:
-    branches: [ master, main ]
+    branches: [ main, dev ]
   pull_request:
-    branches: [ master, main ]
+    branches: [ main, dev ]
 
 jobs:
   test-matrix:

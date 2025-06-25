@@ -1,0 +1,128 @@
+name: Dev to Main
+
+on:
+  push:
+    branches: [ dev ]
+
+jobs:
+  validate-dev:
+    name: Validate Dev Branch
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: 1.23
+
+    - name: Run all tests
+      run: go test -v -race ./...
+
+    - name: Run linting
+      uses: golangci/golangci-lint-action@v3
+      with:
+        version: latest
+        args: --timeout=5m
+
+    - name: Build examples
+      run: |
+        cd Example
+        go build -v ./...
+
+    - name: Security scan
+      uses: securecodewarrior/github-action-gosec@master
+      with:
+        args: './...'
+
+  create-pr:
+    name: Create PR to Main
+    runs-on: ubuntu-latest
+    needs: validate-dev
+    if: success()
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Check if PR already exists
+      id: check-pr
+      run: |
+        # Check if there's already an open PR from dev to main
+        PR_EXISTS=$(gh pr list --base main --head dev --state open --json number --jq length)
+        echo "pr_exists=$PR_EXISTS" >> $GITHUB_OUTPUT
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Get commit messages
+      id: commits
+      if: steps.check-pr.outputs.pr_exists == '0'
+      run: |
+        # Get commits since last merge to main
+        COMMITS=$(git log main..dev --oneline --no-merges | head -10)
+        echo "commits<<EOF" >> $GITHUB_OUTPUT
+        echo "$COMMITS" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+
+    - name: Create Pull Request
+      if: steps.check-pr.outputs.pr_exists == '0'
+      uses: peter-evans/create-pull-request@v5
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        branch: dev
+        base: main
+        title: "🚀 Merge dev to main"
+        body: |
+          ## 🔄 Automated PR from dev to main
+          
+          This PR contains the latest changes from the `dev` branch that have passed all CI checks.
+          
+          ### ✅ Validation Status
+          - [x] All tests passing
+          - [x] Code quality checks passed
+          - [x] Security scan completed
+          - [x] Examples building successfully
+          
+          ### 📝 Recent Changes
+          ```
+          ${{ steps.commits.outputs.commits }}
+          ```
+          
+          ### 🔍 Review Checklist
+          - [ ] Review code changes
+          - [ ] Verify all CI checks pass
+          - [ ] Check for breaking changes
+          - [ ] Update version if needed
+
+          **Ready to merge when approved!** 🎉
+        labels: |
+          automated
+          dev-to-main
+        assignees: Takatochi
+        draft: false
+
+  notify-success:
+    name: Notify Success
+    runs-on: ubuntu-latest
+    needs: [validate-dev, create-pr]
+    if: success()
+    steps:
+    - name: Success notification
+      run: |
+        echo "✅ Dev branch validation successful!"
+        echo "🔄 PR created/updated for merging to main"
+        echo "📋 All CI checks passed"
+
+  notify-failure:
+    name: Notify Failure
+    runs-on: ubuntu-latest
+    needs: [validate-dev]
+    if: failure()
+    steps:
+    - name: Failure notification
+      run: |
+        echo "❌ Dev branch validation failed!"
+        echo "🚫 PR will not be created until issues are resolved"
+        echo "📋 Check the failed CI jobs for details"
