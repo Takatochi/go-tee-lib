@@ -36,7 +36,7 @@ func simpleGeneratorExample() {
 	generator := func(ctx context.Context, ch chan<- int) {
 		defer close(ch) // Always close the channel when done
 		fmt.Println("Generator: Starting to produce numbers...")
-		
+
 		for i := 1; i <= 5; i++ {
 			select {
 			case <-ctx.Done():
@@ -85,7 +85,7 @@ func cancellationExample() {
 	generator := func(ctx context.Context, ch chan<- int) {
 		defer close(ch)
 		fmt.Println("Infinite Generator: Starting...")
-		
+
 		for i := 1; ; i++ {
 			select {
 			case <-ctx.Done():
@@ -140,10 +140,10 @@ func realTimeExample() {
 	generator := func(ctx context.Context, ch chan<- SensorData) {
 		defer close(ch)
 		fmt.Println("Sensor: Starting data collection...")
-		
+
 		sensorID := "TEMP_001"
 		baseValue := 20.0
-		
+
 		for i := 0; ; i++ {
 			select {
 			case <-ctx.Done():
@@ -156,7 +156,7 @@ func realTimeExample() {
 					Value:     baseValue + float64(i%10), // Simulate varying temperature
 					SensorID:  sensorID,
 				}
-				
+
 				select {
 				case <-ctx.Done():
 					return
@@ -179,10 +179,10 @@ func realTimeExample() {
 		case 3:
 			role = "Dashboard"
 		}
-		
+
 		fmt.Printf("%s: Starting...\n", role)
 		count := 0
-		
+
 		for {
 			select {
 			case <-ctx.Done():
@@ -194,7 +194,7 @@ func realTimeExample() {
 					return
 				}
 				count++
-				
+
 				switch role {
 				case "Logger":
 					fmt.Printf("Logger: Saved reading %.1f°C from %s\n", data.Value, data.SensorID)
