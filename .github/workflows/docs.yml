@@ -76,12 +76,16 @@ jobs:
 
     - name: Check examples compile
       run: |
-        cd Example
+        cd examples/basic
+        go build -v ./...
+        cd ../generator
         go build -v ./...
 
     - name: Run examples
       run: |
-        cd Example
+        cd examples/basic
+        timeout 30s go run main.go || true
+        cd ../generator
         timeout 30s go run main.go || true
 
   benchmark:
