@@ -32,7 +32,9 @@ jobs:
 
     - name: Build examples
       run: |
-        cd Example
+        cd examples/basic
+        go build -v ./...
+        cd ../generator
         go build -v ./...
 
 
