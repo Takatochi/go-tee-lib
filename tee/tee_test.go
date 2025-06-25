@@ -1,4 +1,3 @@
-// Package tee надає тести для загальної реалізації Tee для Go каналів.
 // Package tee provides tests for the generic Tee implementation for Go channels.
 package tee
 
@@ -10,7 +9,6 @@ import (
 	"time"
 )
 
-// TestNewTeeUnbuffered перевіряє, що NewTee створює правильну кількість небуферизованих каналів.
 // TestNewTeeUnbuffered ensures that NewTee creates the correct number of unbuffered channels.
 func TestNewTeeUnbuffered(t *testing.T) {
 	numChans := 5
@@ -32,7 +30,6 @@ func TestNewTeeUnbuffered(t *testing.T) {
 	}
 }
 
-// TestNewTeeBuffered перевіряє, що NewTee створює правильну кількість буферизованих каналів із заданим розміром.
 // TestNewTeeBuffered ensures that NewTee creates the correct number of buffered channels with the specified size.
 func TestNewTeeBuffered(t *testing.T) {
 	numChans := 3
@@ -64,7 +61,6 @@ func TestNewTeeBuffered(t *testing.T) {
 	}
 }
 
-// TestTeeRunDuplicatesData перевіряє, що Tee.Run дублює всі дані до всіх вихідних каналів.
 // TestTeeRunDuplicatesData verifies that Tee.Run duplicates all data to all output channels.
 func TestTeeRunDuplicatesData(t *testing.T) {
 	numChans := 3
