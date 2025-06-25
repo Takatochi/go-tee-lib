@@ -73,22 +73,22 @@ jobs:
         gh pr create \
           --base main \
           --head dev \
-          --title "🚀 Merge dev to main" \
-          --body "## 🔄 Automated PR from dev to main
+          --title "Merge dev to main" \
+          --body "## Automated PR from dev to main
 
         This PR contains the latest changes from the \`dev\` branch that have passed all CI checks.
 
-        ### ✅ Validation Status
+        ### Validation Status
         - [x] All tests passing
         - [x] Code quality checks passed
         - [x] Examples building successfully
 
-        ### 📝 Recent Changes
+        ### Recent Changes
         \`\`\`
         ${{ steps.commits.outputs.commits }}
         \`\`\`
 
-        **Ready to merge when approved!** 🎉" \
+        **Ready to merge when approved!**" \
           --label "automated,dev-to-main" || echo "PR might already exist"
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -101,9 +101,9 @@ jobs:
     steps:
     - name: Success notification
       run: |
-        echo "✅ Dev branch validation successful!"
-        echo "🔄 PR created/updated for merging to main"
-        echo "📋 All CI checks passed"
+        echo "Dev branch validation successful!"
+        echo "PR created/updated for merging to main"
+        echo "All CI checks passed"
 
   notify-failure:
     name: Notify Failure
@@ -113,6 +113,6 @@ jobs:
     steps:
     - name: Failure notification
       run: |
-        echo "❌ Dev branch validation failed!"
-        echo "🚫 PR will not be created until issues are resolved"
-        echo "📋 Check the failed CI jobs for details"
+        echo "Dev branch validation failed!"
+        echo "PR will not be created until issues are resolved"
+        echo "Check the failed CI jobs for details"

@@ -59,27 +59,27 @@ jobs:
         release_name: Release ${{ steps.tag.outputs.tag }}
         body: |
           # go-tee-lib ${{ steps.tag.outputs.tag }}
-          
+
           A generic Tee implementation for Go channels with context support.
-          
+
           ## Installation
           ```bash
           go get github.com/Takatochi/go-tee-lib@${{ steps.tag.outputs.tag }}
           ```
-          
+
           ## Usage
           ```go
           import "github.com/Takatochi/go-tee-lib/tee"
-          
+
           // Create Tee with 3 consumers
           teeInstance := tee.NewTee[int](3, 2)
           ctx := context.Background()
-          
+
           // Process data
           data := []int{1, 2, 3, 4, 5}
           tee.RunTeeAndProcess(ctx, teeInstance, data, processor)
           ```
-          
+
           ${{ steps.changelog.outputs.changelog }}
         draft: false
         prerelease: false

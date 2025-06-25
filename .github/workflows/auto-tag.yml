@@ -100,12 +100,12 @@ jobs:
         
         git push origin "$NEW_VERSION"
         
-        echo "✅ Created and pushed tag: $NEW_VERSION"
+        echo "Created and pushed tag: $NEW_VERSION"
 
     - name: Skip tagging notification
       if: steps.tag-exists.outputs.exists == 'true'
       run: |
-        echo "⏭️ Skipping tag creation - tag already exists"
+        echo "Skipping tag creation - tag already exists"
 
   notify-tag-created:
     name: Notify Tag Created
@@ -115,6 +115,6 @@ jobs:
     steps:
     - name: Tag creation notification
       run: |
-        echo "🏷️ New tag created successfully!"
-        echo "🚀 Release workflow will be triggered automatically"
-        echo "📦 New version will be available via go get"
+        echo "New tag created successfully!"
+        echo "Release workflow will be triggered automatically"
+        echo "New version will be available via go get"
