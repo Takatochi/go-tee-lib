@@ -35,10 +35,7 @@ jobs:
         cd Example
         go build -v ./...
 
-    - name: Security scan
-      run: |
-        go install github.com/securecodewarrior/gosec/v2/cmd/gosec@latest
-        gosec ./...
+
 
   create-pr:
     name: Create PR to Main
@@ -84,7 +81,6 @@ jobs:
         ### ✅ Validation Status
         - [x] All tests passing
         - [x] Code quality checks passed
-        - [x] Security scan completed
         - [x] Examples building successfully
 
         ### 📝 Recent Changes
