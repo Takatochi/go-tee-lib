@@ -4,6 +4,10 @@ on:
   push:
     branches: [ dev ]
 
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   validate-dev:
     name: Validate Dev Branch
@@ -32,9 +36,9 @@ jobs:
         go build -v ./...
 
     - name: Security scan
-      uses: securecodewarrior/github-action-gosec@master
-      with:
-        args: './...'
+      run: |
+        go install github.com/securecodewarrior/gosec/v2/cmd/gosec@latest
+        gosec ./...
 
   create-pr:
     name: Create PR to Main
@@ -51,7 +55,7 @@ jobs:
       id: check-pr
       run: |
         # Check if there's already an open PR from dev to main
-        PR_EXISTS=$(gh pr list --base main --head dev --state open --json number --jq length)
+        PR_EXISTS=$(gh pr list --base main --head dev --state open --json number --jq length 2>/dev/null || echo "0")
         echo "pr_exists=$PR_EXISTS" >> $GITHUB_OUTPUT
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -68,40 +72,30 @@ jobs:
 
     - name: Create Pull Request
       if: steps.check-pr.outputs.pr_exists == '0'
-      uses: peter-evans/create-pull-request@v5
-      with:
-        token: ${{ secrets.GITHUB_TOKEN }}
-        branch: dev
-        base: main
-        title: "🚀 Merge dev to main"
-        body: |
-          ## 🔄 Automated PR from dev to main
-          
-          This PR contains the latest changes from the `dev` branch that have passed all CI checks.
-          
-          ### ✅ Validation Status
-          - [x] All tests passing
-          - [x] Code quality checks passed
-          - [x] Security scan completed
-          - [x] Examples building successfully
-          
-          ### 📝 Recent Changes
-          ```
-          ${{ steps.commits.outputs.commits }}
-          ```
-          
-          ### 🔍 Review Checklist
-          - [ ] Review code changes
-          - [ ] Verify all CI checks pass
-          - [ ] Check for breaking changes
-          - [ ] Update version if needed
+      run: |
+        gh pr create \
+          --base main \
+          --head dev \
+          --title "🚀 Merge dev to main" \
+          --body "## 🔄 Automated PR from dev to main
 
-          **Ready to merge when approved!** 🎉
-        labels: |
-          automated
-          dev-to-main
-        assignees: Takatochi
-        draft: false
+        This PR contains the latest changes from the \`dev\` branch that have passed all CI checks.
+
+        ### ✅ Validation Status
+        - [x] All tests passing
+        - [x] Code quality checks passed
+        - [x] Security scan completed
+        - [x] Examples building successfully
+
+        ### 📝 Recent Changes
+        \`\`\`
+        ${{ steps.commits.outputs.commits }}
+        \`\`\`
+
+        **Ready to merge when approved!** 🎉" \
+          --label "automated,dev-to-main" || echo "PR might already exist"
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   notify-success:
     name: Notify Success
