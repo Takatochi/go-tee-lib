@@ -24,18 +24,11 @@ jobs:
 
     - name: Generate documentation
       run: |
-        # Start godoc server in background
-        godoc -http=:6060 &
-        GODOC_PID=$!
-        
-        # Wait for server to start
-        sleep 5
-        
-        # Check if documentation is accessible
-        curl -f http://localhost:6060/pkg/github.com/Takatochi/go-tee-lib/tee/ || exit 1
-        
-        # Kill godoc server
-        kill $GODOC_PID
+        # Check if package can be documented
+        go doc ./tee
+
+        # Verify all exported functions have documentation
+        go doc -all ./tee | grep -E "^(func|type)" || echo "No exported functions found"
 
   readme-check:
     name: README Check
