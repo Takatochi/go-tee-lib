@@ -127,7 +127,7 @@ func (t *Tee[T]) Run(ctx context.Context, inputChannel <-chan T) {
 //   - teeInstance: An instance of ChannelTee or custom implementation
 //   - items: The slice of data to be sent through the tee
 //   - processFn: Function executed for each output channel, receives consumer ID and output channel
-func RunTeeAndProcess[T any](ctx context.Context, teeInstance ChannelTee[T], items []T, processFn func(id int, ch <-chan T)) {
+func RunTeeAndProcess[T any](ctx context.Context, teeInstance ChannelTee[T], items []T, processFn func(ctx context.Context, id int, ch <-chan T)) {
 	// Create an input channel for the data
 	inputCh := make(chan T)
 
@@ -142,18 +142,59 @@ func RunTeeAndProcess[T any](ctx context.Context, teeInstance ChannelTee[T], ite
 	for i, outCh := range outputChans {
 		wg.Add(1) // Add a counter for each consumer goroutine
 		go func(id int, ch <-chan T) {
-			defer wg.Done()   // Decrement the WaitGroup counter when the goroutine finishes
-			processFn(id, ch) // Call the provided processing function for this channel
+			defer wg.Done()        // Decrement the WaitGroup counter when the goroutine finishes
+			processFn(ctx, id, ch) // Call the provided processing function for this channel
 		}(i+1, outCh) // Pass the consumer ID (starting from 1) and the channel
 	}
 
 	// Send all items to the input channel in a separate goroutine
 	go func() {
+		defer close(inputCh) // Important: close the input channel after sending all data
 		for _, item := range items {
-			inputCh <- item
+			select {
+			case <-ctx.Done():
+				return // Exit early if context is canceled
+			case inputCh <- item:
+				// Successfully sent item
+			}
 		}
-		close(inputCh) // Important: close the input channel after sending all data
 	}()
+
+	wg.Wait() // Wait until all consumer goroutines have completed their work
+}
+
+// RunTeeWithGenerator [T any] is a generator-based function that orchestrates the teeing process.
+// It takes a ChannelTee instance, a generator function, and a process function for consumers.
+// The generator function should send items to the provided channel and close it when done.
+// This pattern provides better control over data flow and resource management.
+//
+// Parameters:
+//   - ctx: Context for cancellation
+//   - teeInstance: An instance of ChannelTee or custom implementation
+//   - generator: Function that generates data and sends it to the provided channel
+//   - processFn: Function executed for each output channel, receives consumer ID and output channel
+func RunTeeWithGenerator[T any](ctx context.Context, teeInstance ChannelTee[T], generator func(ctx context.Context, ch chan<- T), processFn func(ctx context.Context, id int, ch <-chan T)) {
+	// Create an input channel for the data
+	inputCh := make(chan T)
+
+	outputChans := teeInstance.GetOutputChannels()
+
+	var wg sync.WaitGroup // WaitGroup for waiting for consumer goroutines to complete
+
+	// Start the Tee in a separate goroutine to distribute the data
+	go teeInstance.Run(ctx, inputCh)
+
+	// Start goroutines to read from the output channels (consumers)
+	for i, outCh := range outputChans {
+		wg.Add(1) // Add a counter for each consumer goroutine
+		go func(id int, ch <-chan T) {
+			defer wg.Done()        // Decrement the WaitGroup counter when the goroutine finishes
+			processFn(ctx, id, ch) // Call the provided processing function for this channel
+		}(i+1, outCh) // Pass the consumer ID (starting from 1) and the channel
+	}
+
+	// Run the generator in a separate goroutine
+	go generator(ctx, inputCh)
 
 	wg.Wait() // Wait until all consumer goroutines have completed their work
 }

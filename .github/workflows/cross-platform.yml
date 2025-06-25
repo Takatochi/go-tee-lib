@@ -43,19 +43,25 @@ jobs:
 
     - name: Build examples
       run: |
-        cd Example
+        cd examples/basic
+        go build -v ./...
+        cd ../generator
         go build -v ./...
 
     - name: Test examples (Unix)
       if: runner.os != 'Windows'
       run: |
-        cd Example
+        cd examples/basic
+        timeout 30s go run main.go || true
+        cd ../generator
         timeout 30s go run main.go || true
 
     - name: Test examples (Windows)
       if: runner.os == 'Windows'
       run: |
-        cd Example
+        cd examples/basic
+        go run main.go
+        cd ../generator
         go run main.go
       timeout-minutes: 1
 
@@ -91,7 +97,9 @@ jobs:
         go build -v ./...
         
         # Build examples
-        cd Example
+        cd examples/basic
+        go build -v ./...
+        cd ../generator
         go build -v ./...
 
   race-detector:

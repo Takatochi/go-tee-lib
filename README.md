@@ -13,11 +13,15 @@ go-tee-lib is a Go module that provides a generic "Tee" pattern implementation f
 The Tee pattern is incredibly useful in concurrent programming when you need to send the same data to multiple independent consumers or processing pipelines. Instead of reading from the input channel multiple times (which would lead to race conditions or only one consumer receiving data), go-tee-lib ensures that each output channel receives an identical copy of the data.
 
 ## Features
-- Generic: Works with any data type T.
-- Buffered/Unbuffered Output Channels: Choose between unbuffered or buffered output channels based on your needs.
-- Simple API: Easy to integrate into existing Go projects.
-- Convenience Function: RunTeeAndProcess simplifies common use cases by handling channel setup, data feeding, and consumer coordination.
-- Extensible: The ChannelTee interface allows for custom Tee implementations.
+- **Generic**: Works with any data type T
+- **Context Support**: Full context.Context integration for cancellation and timeouts
+- **Buffered/Unbuffered Output Channels**: Choose between unbuffered or buffered output channels based on your needs
+- **Simple API**: Easy to integrate into existing Go projects
+- **Generator Pattern**: RunTeeWithGenerator for advanced data streaming scenarios
+- **Convenience Function**: RunTeeAndProcess simplifies common use cases by handling channel setup, data feeding, and consumer coordination
+- **Extensible**: The ChannelTee interface allows for custom Tee implementations
+- **Resource Safe**: Proper goroutine lifecycle management and channel closing
+- **Production Ready**: Comprehensive testing including stress tests and race condition detection
 
 ## Architectural Overview
 The core idea of the Tee pattern is to take a single stream of data and fan it out to multiple parallel streams. Imagine a "T" junction where data flows in from the top and is split to go both left and right simultaneously.
@@ -66,8 +70,13 @@ is sent to Goroutine Consumer A, Goroutine Consumer B, AND Goroutine Consumer C.
 This ensures that all consumers receive the complete dataset, allowing for parallel and independent processing.
 ## Installation
 To use go-tee-lib in your project, simply run go get:
+```bash
+go get github.com/Takatochi/go-tee-lib@latest
 ```
-go get github.com/Takatochi/go-tee-lib/tee
+
+Or specify a specific version:
+```bash
+go get github.com/Takatochi/go-tee-lib@v1.1.1
 ```
 ## Usage
 Basic Usage with NewTee and RunTeeAndProcess
@@ -76,37 +85,100 @@ This is the recommended way for most common scenarios where you have a finite li
     package main
 
     import (
+        "context"
         "fmt"
         "time"
         "github.com/Takatochi/go-tee-lib/tee"
     )
 
     func main() {
-    fmt.Println("--- Example using RunTeeAndProcess with NewTee ---")
-    dataToSend := []int{10, 20, 30, 40, 50, 60}
-    numConsumers := 3
-    bufferedSize := 2 // Use 0 for unbuffered, > 0 for buffered channels
+        fmt.Println("--- Example using RunTeeAndProcess with NewTee ---")
+        dataToSend := []int{10, 20, 30, 40, 50, 60}
+        numConsumers := 3
+        bufferedSize := 2 // Use 0 for unbuffered, > 0 for buffered channels
 
-	// Function that will be executed by each consumer
-	consumerProcessor := func(id int, ch <-chan int) {
-		fmt.Printf("Consumer #%d: Starting processing...\n", id)
-		for val := range ch {
-			fmt.Printf("Consumer #%d: Received value %d\n", id, val)
-			// Simulate processing delay
-			time.Sleep(time.Millisecond * time.Duration(50+id*20))
-		}
-		fmt.Printf("Consumer #%d: Channel closed. Exiting.\n", id)
-	}
+        // Function that will be executed by each consumer
+        consumerProcessor := func(ctx context.Context, id int, ch <-chan int) {
+            fmt.Printf("Consumer #%d: Starting processing...\n", id)
+            for {
+                select {
+                case <-ctx.Done():
+                    fmt.Printf("Consumer #%d: Context cancelled. Exiting.\n", id)
+                    return
+                case val, ok := <-ch:
+                    if !ok {
+                        fmt.Printf("Consumer #%d: Channel closed. Exiting.\n", id)
+                        return
+                    }
+                    fmt.Printf("Consumer #%d: Received value %d\n", id, val)
+                    // Simulate processing delay
+                    time.Sleep(time.Millisecond * time.Duration(50+id*20))
+                }
+            }
+        }
 
-	// Create a Tee instance (buffered in this case)
-	myTee := tee.NewTee[int](numConsumers, bufferedSize)
-	// Run the teeing process and wait for consumers to finish
-	tee.RunTeeAndProcess(myTee, dataToSend, consumerProcessor)
+        // Create a Tee instance (buffered in this case)
+        myTee := tee.NewTee[int](numConsumers, bufferedSize)
+        ctx := context.Background()
 
-	fmt.Println("--- RunTeeAndProcess example finished ---")
+        // Run the teeing process and wait for consumers to finish
+        tee.RunTeeAndProcess(ctx, myTee, dataToSend, consumerProcessor)
+
+        fmt.Println("--- RunTeeAndProcess example finished ---")
+    }
+
+### Generator Pattern Usage
+
+For streaming data or infinite data sources, use the generator pattern:
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "time"
+    "github.com/Takatochi/go-tee-lib/tee"
+)
+
+func main() {
+    ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+    defer cancel()
+
+    // Generator function that produces data
+    generator := func(ctx context.Context, ch chan<- int) {
+        defer close(ch) // Always close the channel when done
+        for i := 1; ; i++ {
+            select {
+            case <-ctx.Done():
+                return // Exit when context is cancelled
+            case ch <- i:
+                time.Sleep(100 * time.Millisecond)
+            }
+        }
+    }
+
+    // Consumer function
+    processor := func(ctx context.Context, id int, ch <-chan int) {
+        for {
+            select {
+            case <-ctx.Done():
+                return
+            case val, ok := <-ch:
+                if !ok {
+                    return
+                }
+                fmt.Printf("Consumer #%d: Processed %d\n", id, val)
+            }
+        }
+    }
+
+    teeInstance := tee.NewTee[int](2, 1)
+    tee.RunTeeWithGenerator(ctx, teeInstance, generator, processor)
 }
+```
 
-Advanced Usage with NewTee and Tee.Run (Manual Control)
+### Advanced Usage with NewTee and Tee.Run (Manual Control)
 For scenarios requiring more granular control over the input channel's lifecycle (e.g., streaming data, dynamic input), you can use Tee.Run directly.
 
     package main
@@ -158,6 +230,61 @@ For scenarios requiring more granular control over the input channel's lifecycle
 	wg.Wait() // Wait until all manual consumers have finished
 	fmt.Println("--- Manual Tee.Run example finished ---")
 }
+
+## API Documentation
+
+### Core Functions
+
+#### `NewTee[T any](numOutputChans int, bufferSize int) ChannelTee[T]`
+Creates a new Tee instance with the specified number of output channels.
+- `numOutputChans`: Number of output channels to create
+- `bufferSize`: Buffer size for channels (0 for unbuffered)
+
+#### `RunTeeAndProcess[T any](ctx context.Context, teeInstance ChannelTee[T], items []T, processFn func(context.Context, int, <-chan T))`
+Convenience function that orchestrates the entire teeing process with a slice of items.
+- `ctx`: Context for cancellation
+- `teeInstance`: An instance of ChannelTee
+- `items`: Slice of data to be sent through the tee
+- `processFn`: Function executed for each output channel
+
+#### `RunTeeWithGenerator[T any](ctx context.Context, teeInstance ChannelTee[T], generator func(context.Context, chan<- T), processFn func(context.Context, int, <-chan T))`
+Generator-based function for streaming or infinite data sources.
+- `ctx`: Context for cancellation
+- `teeInstance`: An instance of ChannelTee
+- `generator`: Function that generates data and sends it to the provided channel
+- `processFn`: Function executed for each output channel
+
+### Interface
+
+#### `ChannelTee[T any]`
+```go
+type ChannelTee[T any] interface {
+    GetOutputChannels() []chan T
+    Run(ctx context.Context, inputChannel <-chan T)
+}
+```
+
+## What's New in v1.1.1+
+
+- **Context Support**: Added `context.Context` integration for cancellation and timeouts
+- **Generator Pattern**: New `RunTeeWithGenerator` function for streaming data scenarios
+- **Enhanced Safety**: Improved goroutine lifecycle management and resource cleanup
+- **Incremental Updates**: Regular patch releases with improvements and fixes
+
+### Migration from v1.1.0
+
+For existing code, simply add context parameter:
+
+```go
+// Old v1.1.0
+processor := func(id int, ch <-chan int) { /* ... */ }
+tee.RunTeeAndProcess(teeInstance, data, processor)
+
+// New v1.1.1+
+processor := func(ctx context.Context, id int, ch <-chan int) { /* ... */ }
+ctx := context.Background()
+tee.RunTeeAndProcess(ctx, teeInstance, data, processor)
+```
 
 ## Contributing
 We welcome contributions! If you find a bug or have a feature request, please open an issue. For code contributions, please fork the repository and submit a pull request.
