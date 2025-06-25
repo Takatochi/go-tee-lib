@@ -131,4 +131,4 @@ jobs:
           echo "Stress testing $test for 30 seconds"
           timeout 30s stress -p=2 go test -run="^${test}$" ./tee || echo "Stress test completed for $test"
         done
-      timeout-minutes: 2
+      timeout-minutes: 10
