@@ -29,20 +29,12 @@ jobs:
     - name: Determine version bump
       id: version-bump
       run: |
-        # Analyze commit messages to determine version bump type
-        COMMIT_MSG="${{ github.event.head_commit.message }}"
-
-        # For this project, we prefer minor/patch versions over major
-        if echo "$COMMIT_MSG" | grep -qE "^(feat|feature)(\(.+\))?:"; then
-          BUMP_TYPE="minor"  # New features get minor version bump
-        elif echo "$COMMIT_MSG" | grep -qE "^(fix|bugfix|patch|docs|style|refactor|test|chore)(\(.+\))?:"; then
-          BUMP_TYPE="patch"  # Fixes, docs, and other changes get patch bump
-        else
-          BUMP_TYPE="patch"  # Default to patch for other changes
-        fi
+        # For this project, we prefer patch versions (1.1.1, 1.1.2, etc.)
+        # All changes get patch version bumps for incremental releases
+        BUMP_TYPE="patch"
 
         echo "bump_type=$BUMP_TYPE" >> $GITHUB_OUTPUT
-        echo "Detected bump type: $BUMP_TYPE"
+        echo "Using patch version bump for incremental releases"
 
     - name: Calculate new version
       id: new-version

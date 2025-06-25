@@ -76,7 +76,7 @@ go get github.com/Takatochi/go-tee-lib@latest
 
 Or specify a specific version:
 ```bash
-go get github.com/Takatochi/go-tee-lib@v1.2.0
+go get github.com/Takatochi/go-tee-lib@v1.1.1
 ```
 ## Usage
 Basic Usage with NewTee and RunTeeAndProcess
@@ -264,23 +264,23 @@ type ChannelTee[T any] interface {
 }
 ```
 
-## What's New in v1.2.0
+## What's New in v1.1.1+
 
 - **Context Support**: Added `context.Context` integration for cancellation and timeouts
 - **Generator Pattern**: New `RunTeeWithGenerator` function for streaming data scenarios
 - **Enhanced Safety**: Improved goroutine lifecycle management and resource cleanup
-- **Backward Compatibility**: Existing v1.1.x code continues to work with minor updates
+- **Incremental Updates**: Regular patch releases with improvements and fixes
 
-### Migration from v1.1.x
+### Migration from v1.1.0
 
 For existing code, simply add context parameter:
 
 ```go
-// Old v1.1.x
+// Old v1.1.0
 processor := func(id int, ch <-chan int) { /* ... */ }
 tee.RunTeeAndProcess(teeInstance, data, processor)
 
-// New v1.2.x
+// New v1.1.1+
 processor := func(ctx context.Context, id int, ch <-chan int) { /* ... */ }
 ctx := context.Background()
 tee.RunTeeAndProcess(ctx, teeInstance, data, processor)
